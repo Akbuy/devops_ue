@@ -23,6 +23,11 @@ def main():
     xml_node_source = xml_root[0].find('source')
     xml_node_source.text = xml_node_source.text + "\\\\"
     
+    # patch class filename XML nodes
+    for class_node in xml_root.findall('.//class'):
+        filename = class_node.get('filename')
+        class_node.set('filename', "C:\\" + filename)
+
     # write XML back
     xml_tree.write(args.cobertura_report_path)
 

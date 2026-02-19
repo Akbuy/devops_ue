@@ -21,7 +21,8 @@ def main():
 
     # load JSON
     json_file = open(args.ue_report_path, encoding="utf-8-sig")
-    json_obj = json.loads(json_file.read())
+    # replace non-breaking space with regular space to avoid xml encoding utf-8 errors
+    json_obj = json.loads(json_file.read().replace("\u00a0", " ")) 
     # print(json_obj)
 
     # create xml root
