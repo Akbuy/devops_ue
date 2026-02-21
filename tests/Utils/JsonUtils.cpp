@@ -45,17 +45,23 @@ bool JsonUtils::ReadInputData(const FString& FileName, FInputData& InputData)
     FString FileContentString;
     if (!FFileHelper::LoadFileToString(FileContentString, *FileName))
     {
-        UE_LOG(LogJsonUtils, Error, TEXT("File opening error"));
+        UE_LOG(LogJsonUtils, Error, TEXT("File loading error: %s"), *FileName);
         return false;
     }
 
+    TSharedPtr<FJsonObject> MainJsonObject = MakeShareable(new FJsonObject());
     TSharedRef<TJsonReader<>> JsonReader = TJsonReaderFactory<>::Create(FileContentString);
-    TSharedPtr<FJsonObject> MainJsonObject;
-    if (!FJsonSerializer::Deserialize(JsonReader, MainJsonObject))
+    if (!FJsonSerializer::Deserialize(JsonReader, MainJsonObject) || !MainJsonObject.IsValid())
     {
         UE_LOG(LogJsonUtils, Error, TEXT("JSON deserialization error"));
         return false;
     }
 
-    return FJsonObjectConverter::JsonObjectToUStruct(MainJsonObject.ToSharedRef(), &InputData, 0, 0);
+    if (!FJsonObjectConverter::JsonObjectToUStruct(MainJsonObject.ToSharedRef(), &InputData))
+    {
+        UE_LOG(LogJsonUtils, Error, TEXT("UStruct conversion error"));
+        return false;
+    }
+
+    return true;
 }

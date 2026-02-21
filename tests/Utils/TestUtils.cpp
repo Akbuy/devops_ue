@@ -1,92 +1,49 @@
+// My game copyright
+
 #if WITH_AUTOMATION_TESTS
 
-#include "<Path>/Utils/TestUtils.h"
+#include "TestUtils.h"
 #include "Misc/OutputDeviceNull.h"
-#include "AutomationBlueprintFunctionLibrary.h"
+#include "AutomationBlueprintFunctionLibrary.h"  // add FunctionalTesting to PublicDependencyModuleNames in your .Build.cs file
 #include "BufferVisualizationData.h"
 
 namespace LifeExe
 {
 namespace Test
 {
-UWorld* GetTestGameWorld()
+
+bool CallFuncByNameWithParams(UObject* Object, const FString& FuncName, const TArray<FString>& Params)
 {
-    const TIndirectArray<FWorldContext>& WorldContexts = GEngine->GetWorldContexts();
-    for (const FWorldContext& Context : WorldContexts)
-    {
-        if ((Context.WorldType == EWorldType::PIE || Context.WorldType == EWorldType::Game) && Context.World())
-        {
-            return Context.World();
-        }
-    }
+    if (!Object) return false;
 
-    return nullptr;
-}
-
-void CallFuncByNameWithParams(UObject* Object, const FString& FuncName, const TArray<FString>& Params)
-{
-    if (!Object) return;
-
-    // Command pattern: "FunctionName Param1 Param2 Param3"
-    FString Command = FuncName;
-    for (const auto Param : Params)
+    FString Command = FString::Printf(TEXT("%s"), *FuncName);
+    for (const FString& Param : Params)
     {
         Command.Append(" ").Append(Param);
     }
+    FEditorScriptExecutionGuard ScriptGuard;
     FOutputDeviceNull OutputDeviceNull;
-    Object->CallFunctionByNameWithArguments(*Command, OutputDeviceNull, nullptr, true);
+    return Object->CallFunctionByNameWithArguments(*Command, OutputDeviceNull, nullptr, true);
 }
-
-FUntilLatentCommand::FUntilLatentCommand(TFunction<void()> InCallback, TFunction<void()> InTimeoutCallback, float InTimeout)
-    : Callback(MoveTemp(InCallback)), TimeoutCallback(MoveTemp(InTimeoutCallback)), Timeout(InTimeout)
+int32 GetActionBindingIndexByName(const UEnhancedInputComponent* InputComponent, const FString& ActionName, ETriggerEvent TriggerEvent)
 {
-}
+    if (!InputComponent) return INDEX_NONE;
 
-bool FUntilLatentCommand::Update()
-{
-    const double NewTime = FPlatformTime::Seconds();
-    if (NewTime - StartTime >= Timeout)
-    {
-        TimeoutCallback();
-        return true;
-    }
-
-    Callback();
-    return false;
-}
-
-int32 GetActionBindingIndexByName(UInputComponent* InputComp, const FString& ActionName, EInputEvent InputEvent)
-{
-    if (!InputComp) return INDEX_NONE;
-
-    for (int32 i = 0; i < InputComp->GetNumActionBindings(); ++i)
-    {
-        const FInputActionBinding Action = InputComp->GetActionBinding(i);
-        if (Action.GetActionName().ToString().Equals(ActionName) && Action.KeyEvent == InputEvent)
+    const int32 ActionIndex = InputComponent->GetActionEventBindings().IndexOfByPredicate(  //
+        [ActionName, TriggerEvent](const TUniquePtr<FEnhancedInputActionEventBinding>& ActionBinding)
         {
-            return i;
-        }
-    }
+            return ActionBinding->GetAction()->GetName().Equals(ActionName)  //
+                   && ActionBinding->GetTriggerEvent() == TriggerEvent;
+        });
 
-    return INDEX_NONE;
+    return ActionIndex;
 }
-
-int32 GetAxisBindingIndexByName(UInputComponent* InputComp, const FString& AxisName)
-{
-    if (!InputComp) return INDEX_NONE;
-
-    const int32 AxisIndex = InputComp->AxisBindings.IndexOfByPredicate(
-        [=](const FInputAxisBinding& AxisBind) { return AxisBind.AxisName.ToString().Equals(AxisName); });
-
-    return AxisIndex;
-}
-
 FString GetTestDataDir()
 {
-    return FPaths::GameSourceDir().Append(FApp::GetProjectName()).Append("/Tests/Data/");
+    return FPaths::GameSourceDir().Append("<Path-to-test>/Tests/Data/");
 }
 
-UWidget* FindWidgetByName(const UUserWidget* Widget, const FName& WidgetName)
+UWidget* FindWidgetByName(const UUserWidget* Widget, const FName& Name)
 {
     if (!Widget || !Widget->WidgetTree) return nullptr;
 
@@ -94,7 +51,7 @@ UWidget* FindWidgetByName(const UUserWidget* Widget, const FName& WidgetName)
     UWidgetTree::ForWidgetAndChildren(Widget->WidgetTree->RootWidget,
         [&](UWidget* Child)
         {
-            if (Child && Child->GetFName().IsEqual(WidgetName))
+            if (Child && Child->GetFName().IsEqual(Name))
             {
                 FoundWidget = Child;
             }
@@ -102,26 +59,27 @@ UWidget* FindWidgetByName(const UUserWidget* Widget, const FName& WidgetName)
     return FoundWidget;
 }
 
-void DoInputAction(UInputComponent* InputComponent, const FString& ActionName, const FKey& Key)
+void DoInputAction(UEnhancedInputComponent* InputComponent, const FString& ActionName, ETriggerEvent TriggerEvent)
 {
     if (!InputComponent) return;
 
-    const int32 ActionIndex = GetActionBindingIndexByName(InputComponent, ActionName, EInputEvent::IE_Pressed);
+    const int32 ActionIndex = GetActionBindingIndexByName(InputComponent, ActionName, TriggerEvent);
     if (ActionIndex != INDEX_NONE)
     {
-        const auto ActionBind = InputComponent->GetActionBinding(ActionIndex);
-        ActionBind.ActionDelegate.Execute(Key);
+        const auto& ActionBind = InputComponent->GetActionEventBindings()[ActionIndex];
+        if (!ActionBind) return;
+
+        ActionBind->Execute(ActionBind->GetAction());
     }
 }
 
-void JumpPressed(UInputComponent* InputComponent)
+void JumpPressed(UEnhancedInputComponent* InputComponent)
 {
-    DoInputAction(InputComponent, "Jump", EKeys::SpaceBar);
+    DoInputAction(InputComponent, "IA_Jump", ETriggerEvent::Started);
 }
-
-void PausePressed(UInputComponent* InputComponent)
+void PausePressed(UEnhancedInputComponent* InputComponent)
 {
-    DoInputAction(InputComponent, "ToggleGamePause", EKeys::P);
+    DoInputAction(InputComponent, "IA_Pause", ETriggerEvent::Started);
 }
 
 FTakeScreenshotLatentCommand::FTakeScreenshotLatentCommand(const FString& InScreenshotName) : ScreenshotName(InScreenshotName)
@@ -148,8 +106,10 @@ bool FTakeGameScreenshotLatentCommand::Update()
 {
     if (!ScreenshotRequested)
     {
-        const auto Options = UAutomationBlueprintFunctionLibrary::GetDefaultScreenshotOptionsForRendering();
-        UAutomationBlueprintFunctionLibrary::TakeAutomationScreenshotInternal(GetTestGameWorld(), ScreenshotName, FString{}, Options);
+        const auto World = AutomationCommon::GetAnyGameWorld();
+        auto Options = UAutomationBlueprintFunctionLibrary::GetDefaultScreenshotOptionsForRendering();
+        Options.Resolution = FVector2D(1920, 1080);
+        UAutomationBlueprintFunctionLibrary::TakeAutomationScreenshotInternal(World, ScreenshotName, FString{}, Options);
         ScreenshotRequested = true;
     }
     return CommandCompleted;
@@ -164,15 +124,22 @@ bool FTakeUIScreenshotLatentCommand::Update()
 {
     if (!ScreenshotSetupDone)
     {
-        ScreenshotSetupDone = true;
         SetBufferVisualization("Opacity");
+        const double Duration = 1.0f;
+        const double NewTime = FPlatformTime::Seconds();
+        if (NewTime - StartTime >= Duration)
+        {
+            ScreenshotSetupDone = true;
+        }
         return false;
     }
 
     if (!ScreenshotRequested)
     {
-        const auto Options = UAutomationBlueprintFunctionLibrary::GetDefaultScreenshotOptionsForRendering();
-        UAutomationBlueprintFunctionLibrary::TakeAutomationScreenshotOfUI_Immediate(GetTestGameWorld(), ScreenshotName, Options);
+        const auto World = AutomationCommon::GetAnyGameWorld();
+        auto Options = UAutomationBlueprintFunctionLibrary::GetDefaultScreenshotOptionsForRendering();
+        Options.Resolution = FVector2D(1920, 1080);
+        UAutomationBlueprintFunctionLibrary::TakeAutomationScreenshotOfUI_Immediate(World, ScreenshotName, Options);
         ScreenshotRequested = true;
     }
     return CommandCompleted;
@@ -204,9 +171,9 @@ void FTakeUIScreenshotLatentCommand::SetBufferVisualization(const FName& Visuali
 
 void SpecCloseLevel(UWorld* World)
 {
-    if (APlayerController* PC = World->GetFirstPlayerController())
+    if (APlayerController* PlayerController = World->GetFirstPlayerController())
     {
-        PC->ConsoleCommand(TEXT("Exit"), true);
+        PlayerController->ConsoleCommand(TEXT("Exit"), true);
     }
 }
 

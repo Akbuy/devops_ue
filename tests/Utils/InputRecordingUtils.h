@@ -3,19 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputAction.h"
 #include "InputRecordingUtils.generated.h"
-
-USTRUCT()
-struct FAxisData
-{
-    GENERATED_BODY()
-
-    UPROPERTY()
-    FName Name;
-
-    UPROPERTY()
-    float Value;
-};
 
 USTRUCT()
 struct FActionData
@@ -26,19 +15,18 @@ struct FActionData
     FName Name;
 
     UPROPERTY()
-    FKey Key;
+    FVector Value;
 
-    UPROPERTY()
-    bool State;
+public:
+    FActionData() = default;
+    FActionData(const FInputActionValue& InSourceActionValue) : Value(InSourceActionValue.Get<FVector>()) {}
+    FActionData(FName Name, const FInputActionValue& InSourceActionValue) : Name(Name), Value(InSourceActionValue.Get<FVector>()) {}
 };
 
 USTRUCT()
 struct FBindingsData
 {
     GENERATED_BODY()
-
-    UPROPERTY()
-    TArray<FAxisData> AxisValues;
 
     UPROPERTY()
     TArray<FActionData> ActionValues;
